@@ -1,0 +1,5 @@
+[theme]
+base = "light"
+sidebar.backgroundColor = "#CCBBA2"
+sidebar.secondaryBackgroundColor = "#CCBBA2"
+sidebar.textColor = "#FFFFFF"

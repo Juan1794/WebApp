@@ -1,5 +1,20 @@
-[theme]
-base = "light"
-sidebar.backgroundColor = "#CCBBA2"
-sidebar.secondaryBackgroundColor = "#CCBBA2"
-sidebar.textColor = "#FFFFFF"
+from openpyxl import load_workbook
+
+def send_to_woocommerce(selected_product, selected_rows):
+    path = "excel/WEBSITE_JP1.xlsm"
+    wb = load_workbook(filename=path, keep_vba=True)
+    ws = wb["WOOCOMMERCE_SALE"]
+
+    # Buscar la próxima fila vacía en la columna B
+    start_row = 4
+    while ws[f"B{start_row}"].value is not None:
+        start_row += 1
+
+    for _, row in selected_rows.iterrows():
+        ws[f"A{start_row}"] = row["Size"]
+        ws[f"B{start_row}"] = selected_product
+        ws[f"C{start_row}"] = row["Price"]
+        start_row += 1
+
+    wb.save(path)
+    wb.close()

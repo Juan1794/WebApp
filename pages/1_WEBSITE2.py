@@ -2,11 +2,9 @@ import streamlit as st
 import pandas as pd
 import openpyxl
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
-from st_aggrid.shared import JsCode
 
-# --- CONFIGURACIÓN ---
+# --- CONFIGURACIÓN GENERAL ---
 st.set_page_config(page_title="WEBSITE2 Pricing", layout="wide")
-
 EXCEL_PATH = "C:/Users/Jorge/OneDrive/Desktop/WebApp/excel/WEBSITE_JP1.xlsm"
 sheet_data = openpyxl.load_workbook(EXCEL_PATH, data_only=True)["DATA"]
 sheet_list = openpyxl.load_workbook(EXCEL_PATH, data_only=True)["LIST"]
@@ -16,11 +14,11 @@ for key in ["lock_tax", "lock_discount", "lock_profit", "lock_shipping", "lock_s
     if key not in st.session_state:
         st.session_state[key] = False
 
-# --- PRODUCT LIST ---
+# --- LISTA DE PRODUCTOS ---
 product_list = [str(cell.value) for cell in sheet_list["A"][1:1900] if cell.value]
 selected_product = st.selectbox("🔍 Search Product", product_list)
 
-# --- BUSCAR DATOS ---
+# --- FUNCIÓN DE BÚSQUEDA ---
 def buscar_datos_producto(producto):
     for row in sheet_data.iter_rows(min_row=2):
         if str(row[0].value).strip() == str(producto).strip():
@@ -34,7 +32,7 @@ precio_oil, labor_costs = buscar_datos_producto(selected_product)
 # --- FRANJA VERDE ---
 st.markdown(f"<div style='background-color:#a3d9a5;padding:10px;border-radius:5px;text-align:center;'><b>💲 Price per Pound: ${precio_oil:.2f}</b></div>", unsafe_allow_html=True)
 
-# --- SUBMENÚ ---
+# --- SUBMENÚ EMPRESARIAL ---
 st.markdown("### 🧾 Submenú empresarial")
 col1, col2, col3, col4 = st.columns(4)
 with col1:
@@ -44,7 +42,7 @@ with col2:
     discount = st.number_input("Discount %", value=0.0, step=0.1, disabled=st.session_state.lock_discount, format="%.2f")
     st.checkbox("🔒", key="lock_discount")
 with col3:
-    fee_website = st.number_input("Fee Website", value=4.2, step=0.1, disabled=False, format="%.2f")
+    fee_website = st.number_input("Fee Website %", value=4.2, step=0.1, disabled=False, format="%.2f")
 with col4:
     suggested_profit = st.number_input("Suggested Profit %", value=75.0, step=0.1, disabled=st.session_state.lock_profit, format="%.2f")
     st.checkbox("🔒", key="lock_profit")
@@ -72,30 +70,45 @@ df = pd.DataFrame({
     "✔️": [False]*12
 })
 
-# --- CÁLCULOS ---
-df["Discount"] = df["Price"] * (discount / 100)
-df["Price with Discount"] = df["Price"] - df["Discount"]
-df["Tax"] = df["Price"] * (tax / 100)
-df["Price + Tax"] = df["Price"] + df["Tax"]
-df["Fee Website"] = df["Price"] * (fee_website / 100)
-df["Profit"] = df["Price"] - df["Shipping"] - df["Labor to Make"] - df["Discount"] - df["Fee Website"]
-df["Total Profit"] = (df["Profit"] / df["Labor to Make"]).replace([float("inf"), -float("inf")], 0)
-df["Suggested Price"] = df["Labor to Make"] * (1 + suggested_profit / 100) + df["Shipping"]
+# --- FÓRMULAS EXACTAS ---
+for i in range(len(df)):
+    df.at[i, "Discount"] = df.at[i, "Price"] * (discount / 100)
+    if df.at[i, "Price"] == 0:
+        df.at[i, "Price with Discount"] = "-"
+    elif discount == 0:
+        df.at[i, "Price with Discount"] = "A&D"
+    else:
+        df.at[i, "Price with Discount"] = df.at[i, "Price"] - df.at[i, "Discount"]
 
-# --- AGGRID CONFIG ---
-gb = GridOptionsBuilder.from_dataframe(df)
-gb.configure_columns(["Shipping", "Search %"], editable=not st.session_state.lock_shipping)
-gb.configure_columns(["Price"], editable=True)
-gb.configure_columns(["✔️"], cellEditor='agCheckboxCellEditor', editable=True)
-gb.configure_columns(["Tax", "Fee Website", "Profit", "Total Profit", "Suggested Price", "Price + Tax", "Price with Discount", "Discount"], type=["numericColumn"], valueFormatter='x.toLocaleString("en-US", {style: "currency", currency: "USD"})')
-gb.configure_columns(["Search %"], type=["numericColumn"], valueFormatter='x.toFixed(2) + "%"')
-grid_options = gb.build()
+    df.at[i, "Tax"] = df.at[i, "Price"] * (tax / 100)
+    df.at[i, "Price + Tax"] = df.at[i, "Price"] + df.at[i, "Tax"]
+    df.at[i, "Fee Website"] = df.at[i, "Price"] * (fee_website / 100)
+    df.at[i, "Profit"] = df.at[i, "Price"] - df.at[i, "Shipping"] - df.at[i, "Labor to Make"] - df.at[i, "Discount"] - df.at[i, "Fee Website"]
+    df.at[i, "Total Profit"] = 0 if df.at[i, "Labor to Make"] == 0 else df.at[i, "Profit"] / df.at[i, "Labor to Make"]
+    df.at[i, "Suggested Price"] = df.at[i, "Labor to Make"] * (1 + suggested_profit / 100) + df.at[i, "Shipping"]
 
 # --- BOTÓN PRICE ---
 if st.button("💰 PRICE"):
-    df["Price"] = df["Suggested Price"]
+    for i in range(len(df)):
+        df.at[i, "Price"] = df.at[i, "Suggested Price"]
     st.success("✔️ Suggested Price copiado a columna Price.")
 
-# --- TABLA ---
+# --- BLOQUEO DE CABECERAS ---
+colbs1, colbs2 = st.columns(2)
+with colbs1:
+    st.checkbox("🔒 Shipping", key="lock_shipping")
+with colbs2:
+    st.checkbox("🔒 Search %", key="lock_search")
+
+# --- AGGRID ---
+gb = GridOptionsBuilder.from_dataframe(df)
+gb.configure_columns(["Shipping"], editable=not st.session_state.lock_shipping)
+gb.configure_columns(["Search %"], editable=not st.session_state.lock_search)
+gb.configure_columns(["Price"], editable=True)
+gb.configure_columns(["✔️"], cellEditor='agCheckboxCellEditor', editable=True)
+gb.configure_columns(["Tax", "Fee Website", "Profit", "Total Profit", "Suggested Price", "Price + Tax"], type=["numericColumn"], valueFormatter='x.toLocaleString("en-US", {style: "currency", currency: "USD"})')
+gb.configure_columns(["Search %"], type=["numericColumn"], valueFormatter='x.toFixed(2) + "%"')
+grid_options = gb.build()
+
 st.markdown("### 📊 Tabla de precios")
 AgGrid(df, gridOptions=grid_options, update_mode=GridUpdateMode.VALUE_CHANGED, height=600, fit_columns_on_grid_load=True)

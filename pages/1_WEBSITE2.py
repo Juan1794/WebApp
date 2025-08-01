@@ -3,17 +3,9 @@ import pandas as pd
 from st_aggrid import AgGrid, GridOptionsBuilder
 from st_aggrid.shared import GridUpdateMode
 import openpyxl
+import streamlit.components.v1 as components
 
-st.set_page_config(layout="wide", page_title="📦 WEBSITE2-System Price")
-
-st.markdown("""
-    <style>
-    .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4, .stMarkdown h5, .stMarkdown h6,
-    .st-bb, .st-c3, .st-c4, .ag-header-cell-label, .ag-theme-streamlit {
-        color: white !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
+st.set_page_config(layout="wide", page_title="📦 WEBSITE2")
 
 @st.cache_data
 def load_data():
@@ -32,10 +24,13 @@ def obtener_labor(producto):
     row = df_data[df_data["PRODUCT NAME"] == producto]
     return row.iloc[0, 2:14].values if not row.empty else [0.00]*12
 
-for key in ["lock_shipping", "lock_search", "df_original"]:
+# Estados persistentes
+for key in ["lock_shipping", "lock_search", "df_original", "selected_product_old"]:
     if key not in st.session_state:
         if key == "df_original":
             st.session_state[key] = None
+        elif key == "selected_product_old":
+            st.session_state[key] = ""
         else:
             st.session_state[key] = False
 
@@ -75,7 +70,7 @@ if selected_product:
         "2 OZ SPRAY": 4.71, "10 ML": 4.71, "30 ML": 4.71
     }
 
-    if st.session_state.df_original is None:
+    if st.session_state.df_original is None or selected_product != st.session_state.selected_product_old:
         rows = []
         for i, size in enumerate(sizes):
             labor = round(labor_values[i], 2)
@@ -89,6 +84,7 @@ if selected_product:
                 "✔️": False
             })
         st.session_state.df_original = pd.DataFrame(rows)
+        st.session_state.selected_product_old = selected_product
 
     def calcular(row):
         labor = row["Labor to Make"]
@@ -146,3 +142,28 @@ if selected_product:
 
     st.markdown("### 📊 RESULTADO FINAL")
     AgGrid(df_editado, fit_columns_on_grid_load=True, update_mode=GridUpdateMode.NO_UPDATE)
+
+    # Botón PRINT
+    print_button = """
+        <script>
+            function printSection(){
+                const section = document.querySelector('.ag-theme-streamlit');
+                const original = document.body.innerHTML;
+                document.body.innerHTML = section.outerHTML;
+                window.print();
+                document.body.innerHTML = original;
+                location.reload();
+            }
+        </script>
+        <button onclick="printSection()" style="
+            background-color:#4CAF50;
+            color:white;
+            padding:10px 20px;
+            font-size:1rem;
+            border:none;
+            border-radius:5px;
+            cursor:pointer;
+            margin:10px 0;
+        ">🖨️ Imprimir Tabla Final</button>
+    """
+    components.html(print_button, height=60)

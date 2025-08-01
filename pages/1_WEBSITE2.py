@@ -4,7 +4,16 @@ from st_aggrid import AgGrid, GridOptionsBuilder
 from st_aggrid.shared import GridUpdateMode
 import openpyxl
 
-st.set_page_config(layout="wide", page_title="📦 WEBSITE2")
+st.set_page_config(layout="wide", page_title="📦 WEBSITE2-System Price")
+
+st.markdown("""
+    <style>
+    .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4, .stMarkdown h5, .stMarkdown h6,
+    .st-bb, .st-c3, .st-c4, .ag-header-cell-label, .ag-theme-streamlit {
+        color: white !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 @st.cache_data
 def load_data():
@@ -23,7 +32,6 @@ def obtener_labor(producto):
     row = df_data[df_data["PRODUCT NAME"] == producto]
     return row.iloc[0, 2:14].values if not row.empty else [0.00]*12
 
-# Estados persistentes
 for key in ["lock_shipping", "lock_search", "df_original"]:
     if key not in st.session_state:
         if key == "df_original":

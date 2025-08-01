@@ -1,8 +1,10 @@
 import streamlit as st
 import pandas as pd
+from st_aggrid import AgGrid, GridOptionsBuilder
+from st_aggrid.shared import GridUpdateMode
 import openpyxl
 
-st.set_page_config(layout="wide", page_title="📦 PRODUCT MANAGER - WEBSITE2")
+st.set_page_config(layout="wide", page_title="📦 WEBSITE2")
 
 @st.cache_data
 def load_data():
@@ -21,101 +23,118 @@ def obtener_labor(producto):
     row = df_data[df_data["PRODUCT NAME"] == producto]
     return row.iloc[0, 2:14].values if not row.empty else [0.00]*12
 
-# Estados de bloqueo global por columna
-for key in ["lock_shipping", "lock_search", "lock_price", "lock_tax", "lock_discount", "lock_profit", "lock_fee"]:
+# Estados persistentes
+for key in ["lock_shipping", "lock_search", "df_original"]:
     if key not in st.session_state:
-        st.session_state[key] = False
+        if key == "df_original":
+            st.session_state[key] = None
+        else:
+            st.session_state[key] = False
 
 df_data = load_data()
 product_list = load_list()
 
-st.markdown("<h1 style='font-weight:bold;'>📦 PRODUCT MANAGER - WEBSITE2</h1>", unsafe_allow_html=True)
+st.title("📦 WEBSITE2 FINAL")
 
-col1, col2 = st.columns([3, 1])
+col1, col2 = st.columns([4, 1])
 with col1:
     selected_product = st.selectbox("🔍 Search Product", [""] + product_list)
 with col2:
     price_per_pound = buscar_precio(selected_product)
-    st.markdown(f"<span style='background-color:#ccffcc;padding:0.4em;border-radius:6px;'>💲 Price per Pound: <strong>${price_per_pound:.2f}</strong></span>", unsafe_allow_html=True)
+    st.markdown(f"<div style='background:#cce5cc;padding:10px;border-radius:6px;font-weight:bold;color:green;'>💲 Price per Pound: ${price_per_pound:.2f}</div>", unsafe_allow_html=True)
 
-# Submenú visual tipo listado
-with st.expander("🔒 LOCKED FIELDS", expanded=True):
+with st.expander("⚙️ CONFIGURACIÓN", expanded=True):
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        st.session_state.lock_tax = st.toggle("🔒 Tax %", value=st.session_state.lock_tax)
-        tax = st.number_input("Tax %", value=12.63, step=0.01, disabled=st.session_state.lock_tax)
+        st.checkbox("🔒 Tax %", key="lock_tax")
+        tax = st.number_input("Tax %", step=0.01, value=12.63, disabled=st.session_state.get("lock_tax", False))
     with c2:
-        st.session_state.lock_discount = st.toggle("🔒 Discount %", value=st.session_state.lock_discount)
-        discount = st.number_input("Discount %", value=0.00, step=0.01, disabled=st.session_state.lock_discount)
+        st.checkbox("🔒 Discount %", key="lock_discount")
+        discount = st.number_input("Discount %", step=0.01, value=0.00, disabled=st.session_state.get("lock_discount", False))
     with c3:
-        st.session_state.lock_profit = st.toggle("🔒 Profit %", value=st.session_state.lock_profit)
-        suggested_profit = st.number_input("Suggested Profit %", value=60.00, step=0.01, disabled=st.session_state.lock_profit)
+        st.checkbox("🔒 Profit %", key="lock_profit")
+        suggested_profit = st.number_input("Suggested Profit %", step=0.01, value=75.00, disabled=st.session_state.get("lock_profit", False))
     with c4:
-        st.session_state.lock_fee = st.toggle("🔒 Website Fee %", value=st.session_state.lock_fee)
-        website_fee = st.number_input("Website Fee %", value=4.20, step=0.01, disabled=st.session_state.lock_fee)
+        st.checkbox("🔒 Website Fee %", key="lock_fee")
+        website_fee = st.number_input("Website Fee %", step=0.01, value=4.20, disabled=st.session_state.get("lock_fee", False))
 
-# TABLA UNIFICADA (TODO DENTRO)
 if selected_product:
     sizes = ["1 OZ", "2 OZ", "4 OZ", "8 OZ", "1 LB", "2 LB", "4 LB", "8 LB", "1 OZ SPRAY", "2 OZ SPRAY", "10 ML", "30 ML"]
     labor_values = obtener_labor(selected_product)
+    shipping_default = {
+        "1 OZ": 4.71, "2 OZ": 4.71, "4 OZ": 4.71, "8 OZ": 5.03, "1 LB": 8.86,
+        "2 LB": 9.20, "4 LB": 9.20, "8 LB": 16.85, "1 OZ SPRAY": 4.71,
+        "2 OZ SPRAY": 4.71, "10 ML": 4.71, "30 ML": 4.71
+    }
 
-    data = []
-    for i in range(12):
-        data.append({
-            "Size": sizes[i],
-            "Labor to Make": round(labor_values[i], 2),
-            "Shipping": 0.00,
-            "Price": 0.00,
-            "Search %": 0.00
-        })
+    if st.session_state.df_original is None:
+        rows = []
+        for i, size in enumerate(sizes):
+            labor = round(labor_values[i], 2)
+            shipping = shipping_default.get(size, 0.00)
+            rows.append({
+                "Size": size,
+                "Labor to Make": labor,
+                "Shipping": shipping,
+                "Price": 0.00,
+                "Search %": 0.00,
+                "✔️": False
+            })
+        st.session_state.df_original = pd.DataFrame(rows)
 
-    df_edit = pd.DataFrame(data)
-
-    edited = st.data_editor(
-        df_edit,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "Shipping": st.column_config.NumberColumn(format="$%.2f", disabled=st.session_state.lock_shipping),
-            "Price": st.column_config.NumberColumn(format="$%.2f", disabled=st.session_state.lock_price),
-            "Search %": st.column_config.NumberColumn(format="%.2f%%", disabled=st.session_state.lock_search),
-        },
-        num_rows="fixed"
-    )
-
-    # Calcular resultados por fila
-    results = []
-    for i, row in edited.iterrows():
+    def calcular(row):
         labor = row["Labor to Make"]
         shipping = row["Shipping"]
         price = row["Price"]
         search = row["Search %"]
+        discount_amt = price * discount / 100
+        tax_amt = price * tax / 100
+        fee_amt = price * (website_fee * (1 + tax / 100)) / 100
+        price_tax = price + tax_amt
+        price_discount = "-" if labor == 0 else ("A&D" if discount == 0 else price - discount_amt)
+        profit = price - shipping - labor - fee_amt - discount_amt
+        total_profit = "-" if labor == 0 else profit / labor
+        base = labor + (labor * (search / 100 if search > 0 else suggested_profit / 100)) + shipping
+        suggested_price = 0.00 if labor == 0 else base / (1 - ((discount / 100) + (website_fee * (1 + tax / 100) / 100)))
+        return pd.Series([
+            round(price_discount, 2) if isinstance(price_discount, float) else price_discount,
+            round(tax_amt, 2),
+            round(price_tax, 2),
+            round(fee_amt, 2),
+            round(discount_amt, 2),
+            round(profit, 2),
+            f"{total_profit:.2%}" if isinstance(total_profit, float) else total_profit,
+            round(suggested_price, 2)
+        ], index=[
+            "Price with Discount", "Tax", "Price + Tax", "Fee Website",
+            "Discount", "Profit", "Total Profit", "Suggested Price"
+        ])
 
-        discount_amt = round(price * (discount / 100), 2)
-        tax_amt = round(price * (tax / 100), 2)
-        fee_amt = round(price * (website_fee * (1 + tax / 100)) / 100, 2)
-        price_tax = round(price + tax_amt, 2)
-        price_discount = round(price - discount_amt, 2) if discount > 0 else "A&D"
-        profit = round(price - shipping - labor - fee_amt - discount_amt, 2)
-        total_profit = f"{profit / labor:.2%}" if labor != 0 else "-"
-        base = labor + (labor * ((search / 100) if search > 0 else (suggested_profit / 100))) + shipping
-        suggested_price = round(base / (1 - ((discount / 100) + (website_fee * (1 + tax / 100) / 100))), 2) if labor != 0 else 0.00
+    b1, b2 = st.columns(2)
+    with b1:
+        st.session_state.lock_shipping = st.toggle("🔒 Shipping", value=st.session_state.lock_shipping)
+    with b2:
+        st.session_state.lock_search = st.toggle("🔒 Search %", value=st.session_state.lock_search)
 
-        results.append({
-            "Size": row["Size"],
-            "Labor to Make": f"${labor:.2f}",
-            "Shipping": f"${shipping:.2f}",
-            "Price": f"${price:.2f}",
-            "Search %": f"{search:.2%}",
-            "Discount": f"${discount_amt:.2f}",
-            "Tax": f"${tax_amt:.2f}",
-            "Fee Website": f"${fee_amt:.2f}",
-            "Price + Tax": f"${price_tax:.2f}",
-            "Price with Discount": price_discount,
-            "Profit": f"${profit:.2f}",
-            "Total Profit": total_profit,
-            "Suggested Price": f"${suggested_price:.2f}"
-        })
+    gb = GridOptionsBuilder.from_dataframe(st.session_state.df_original)
+    gb.configure_columns(["Shipping"], editable=not st.session_state.lock_shipping, type=["numericColumn"], precision=2)
+    gb.configure_columns(["Search %"], editable=not st.session_state.lock_search, type=["numericColumn"], precision=2)
+    gb.configure_columns(["Price"], editable=True, type=["numericColumn"], precision=2)
+    gb.configure_columns(["✔️"], editable=True, cellEditor='agCheckboxCellEditor')
+    gb.configure_columns(["Labor to Make"], editable=False, precision=2)
+    grid_options = gb.build()
 
-    st.markdown("### 📊 Final Calculation Table")
-    st.dataframe(pd.DataFrame(results), use_container_width=True, hide_index=True)
+    response = AgGrid(st.session_state.df_original, gridOptions=grid_options, update_mode=GridUpdateMode.MODEL_CHANGED, fit_columns_on_grid_load=True)
+    df_editado = response.data.copy()
+
+    calculado = df_editado.apply(calcular, axis=1)
+    for col in calculado.columns:
+        df_editado[col] = calculado[col]
+
+    if st.button("📌 PRICE: Copiar Suggested → Price"):
+        suggested_values = df_editado["Suggested Price"].copy()
+        st.session_state.df_original["Price"] = suggested_values
+        df_editado["Price"] = suggested_values
+
+    st.markdown("### 📊 RESULTADO FINAL")
+    AgGrid(df_editado, fit_columns_on_grid_load=True, update_mode=GridUpdateMode.NO_UPDATE)
